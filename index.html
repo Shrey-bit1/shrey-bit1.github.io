@@ -4,44 +4,75 @@
 <meta name="build" content="public">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Desk</title>
+<title>Shrey Tatamiya</title>
+<meta name="description" content="Shrey Tatamiya. Computational design and architecture.">
+<!-- 0020: the link preview (LinkedIn, messages): preview.png, the room by day with the name. -->
+<meta property="og:title" content="Shrey Tatamiya">
+<meta property="og:description" content="Computational design and architecture">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://shrey-bit1.github.io/">
+<meta property="og:image" content="https://shrey-bit1.github.io/preview.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preload" href="fonts/jost-latin.woff2" as="font" type="font/woff2" crossorigin>
 <style>
-  :root { --paper: #f5f5f4; --ink: #111; }
+  /* Jost (SIL Open Font License), close to the Futura of the old portfolio's headings. */
+  @font-face { font-family: Jost; src: url(fonts/jost-latin.woff2) format('woff2'); font-weight: 400 700; font-display: swap; }
+  :root { --paper: #f5f5f4; --ink: #111; --grey: #8a8a8a; }
   /* 0014: night, light lines on dark grey. The colours match NIGHT in lib/draw.js. */
-  :root[data-theme=dark] { --paper: #171717; --ink: #ebebeb; }
+  :root[data-theme=dark] { --paper: #171717; --ink: #ebebeb; --grey: #9a9a9a; }
   html, body { margin: 0; height: 100%; overflow: hidden; background: var(--paper); color: var(--ink); }
-  body { font: 16px/1.5 system-ui, sans-serif; }
+  body { font: 16px/1.5 Arial, Helvetica, sans-serif; }
   canvas { display: block; touch-action: manipulation; }
+  a { color: inherit; text-decoration: none; }
+  a:hover, a:focus-visible, a.lit { text-decoration: underline; text-underline-offset: .2em; text-decoration-thickness: 1px; }
+  :focus-visible { outline: 1px solid var(--ink); outline-offset: 3px; }
 
-  #panel {
-    position: fixed; top: 0; right: 0; bottom: 0; width: 380px; box-sizing: border-box;
-    padding: 32px; overflow: auto; background: var(--paper); border-left: 1px solid var(--ink);
-    transform: translateX(100%); visibility: hidden; transition: transform .35s, visibility .35s;
-  }
-  #panel.open { transform: none; visibility: visible; }
-  #panel h1 { font-size: 24px; font-weight: 500; margin: 24px 0 8px; }
-  #back { font: inherit; color: inherit; background: none; border: 1px solid var(--ink); padding: 6px 12px; cursor: pointer; }
-  #back:hover { background: var(--ink); color: var(--paper); }
-
-  #theme { position: fixed; top: 16px; left: 16px; font: inherit; font-size: 14px; color: var(--ink); background: var(--paper);
-    border: 1px solid var(--ink); padding: 4px 10px; cursor: pointer; }
-  #theme:hover { background: var(--ink); color: var(--paper); }
+  /* 0020: laid out like a spread of the old portfolio (Desk input/Style reference/layout-reference.png):
+     running heads top left and right, a rule and the credit at the foot, the title a fifth of the
+     way down, the subtitle, then a block of plain lines; the drawing where the picture was. The
+     positions are the reference's, as shares of the page. */
+  .run { position: fixed; top: 2.2vh; font: 400 max(12px, .95vh) Jost, sans-serif; }
+  #name-link { left: 3vw; }
+  #theme { right: 3vw; padding: 0; border: 0; background: none; color: inherit; cursor: pointer; }
+  #theme:hover, #theme:focus-visible { text-decoration: underline; text-underline-offset: .2em; }
+  #foot { position: fixed; left: 0; right: 0; bottom: 0; height: 3.4vh; border-top: 1px solid var(--ink); pointer-events: none; }
   /* 0017: swisstopo asks to be credited where its data is shown */
-  #credit { position: fixed; bottom: 8px; left: 16px; font-size: 11px; opacity: .6; }
-  #credit a { color: inherit; }
+  #credit { position: absolute; left: 3vw; top: .5vh; font: 400 max(11px, .85vh) Jost, sans-serif; opacity: .7; pointer-events: auto; }
+  #credit a { text-decoration: underline; }
+
+  /* Where the drawing is fitted (index.html's fit()). Nothing is drawn in it; the canvas is under all of it. */
+  #picture { position: fixed; left: 58.7vw; right: 8.8vw; top: 18.3vh; bottom: 18.5vh; pointer-events: none; }
+  #text { position: fixed; left: 9.9vw; width: 42vw; top: 0; bottom: 0; pointer-events: none; }
+  #text > * { position: absolute; left: 0; margin: 0; pointer-events: auto; }
+  #title { top: 20.6vh; font: 700 max(24px, 2.6vh) / 1.15 Jost, sans-serif; letter-spacing: .005em; }
+  #sub { top: 36vh; font: 500 max(17px, 1.75vh) / 1.3 Jost, sans-serif; }
+  #menu { top: 51vh; display: grid; justify-items: start; font: 400 max(15px, 1.45vh) / 1.35 Arial, Helvetica, sans-serif; }
+  #menu a[aria-current=page] { text-decoration: underline; text-underline-offset: .2em; }
+  #title, #sub { transition: opacity .3s; }
+  #text.leaving #title, #text.leaving #sub { opacity: 0; }
+
   #tune { position: fixed; top: 56px; left: 16px; display: grid; gap: 6px; padding: 12px; font-size: 13px;
-    background: var(--paper); border: 1px solid var(--ink); }
+    background: var(--paper); border: 1px solid var(--ink); z-index: 2; }
   #tune[hidden] { display: none; }   /* 0019: its own display rule beat [hidden], so it always showed */
   #tune label { display: grid; grid-template-columns: 160px auto; gap: 8px; align-items: center; }
   #tune button { font: inherit; color: inherit; background: none; border: 1px solid var(--ink); padding: 4px 10px; cursor: pointer; justify-self: start; }
 
+  /* Phones: the drawing on top, the text under it, as a page turned upright. */
   @media (max-width: 799px) {
-    #panel {
-      top: 50%; left: 0; right: 0; width: auto; padding: 20px 16px;
-      border-left: 0; border-top: 1px solid var(--ink); transform: translateY(100%);
-    }
+    .run { top: 14px; font-size: 13px; }
+    #name-link { left: 16px; } #theme { right: 16px; }
+    #picture { left: 0; right: 0; top: 6vh; bottom: 44vh; }
+    #text { left: 16px; right: 16px; width: auto; top: 58vh; bottom: 5vh; }
+    #text > * { position: static; }
+    #title { font-size: 24px; }
+    #sub { font-size: 17px; margin-top: 6px; }
+    #menu { margin-top: 3vh; font-size: 16px; line-height: 1.7; }
+    #credit { left: 16px; }
+    #foot { height: 28px; }
   }
-  @media (prefers-reduced-motion: reduce) { #panel { transition: none; } }
+  @media (prefers-reduced-motion: reduce) { #title, #sub { transition: none; } }
 </style>
 <script type="importmap">
   { "imports": {
@@ -51,14 +82,16 @@
 </script>
 </head>
 <body>
-<button id="theme" type="button" title="Switch between day and night">Night</button>
-<small id="credit" hidden></small>
+<a id="name-link" class="run" href="#/">Shrey Tatamiya</a>
+<button id="theme" class="run" type="button" title="Day or night">Night</button>
+<div id="picture"></div>
+<main id="text">
+  <h1 id="title">Shrey Tatamiya</h1>
+  <p id="sub">Computational design and architecture</p>
+  <nav id="menu" aria-label="Work"></nav>
+</main>
+<div id="foot"><small id="credit" hidden></small></div>
 <form id="tune" hidden onsubmit="return false"><b>Window view</b></form>
-<aside id="panel" aria-live="polite">
-  <button id="back">&larr; Back to desk</button>
-  <h1 id="panel-title"></h1>
-  <p id="panel-text"></p>
-</aside>
 
 <script type="module">
 // The desk scene. The drawing style is in lib/draw.js. Every object (the room shell, the desk
@@ -73,10 +106,9 @@ import * as shell from './objects/room-shell.js';
 
 const FLY_MS = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 1400;
 const VIEW_HEIGHT = 3.95;   // metres of the scene that fit the window height at zoom 1
-// 0006: the room is 2.8 m along the window wall, with a corner at each end.
-// 0007: lower and a little further out, for the 2.8 m walls and the 375 mm slab below.
-const HOME = { target: [0.55, 1.12, 0.98], zoom: 0.78 };
-const HOME_PHONE = { target: [0.42, 1.08, -0.1], zoom: 2 };   // narrow screens crop to the desk
+// 0020: at home the whole room is fitted into the picture box (homeView()); narrow screens crop
+// to the desk, round this point.
+const HOME_PHONE = { target: [0.42, 1.08, -0.1] };
 
 // The room shell's settings, as saved on the bench (or its defaults), and what follows from them.
 const SHELL = (await saved('room-shell')).settings;
@@ -100,7 +132,7 @@ const cabinetMade = saved('cabinet').then(async (c) => {
 const ITEMS = [
   {
     title: 'Websites and apps',
-    text: 'Placeholder. The websites and apps I have made open here.',
+    slug: 'apps', sub: 'Projects',   // 0020: its address (#/apps) and the page's subtitle
     color: 0xffe9a8,
     camFrom: 'monitor',   // 0014: the bench object whose 'close' setting says how close the camera comes
     // 0011: the monitor is a bench object (objects/desk-things.js); its screen tints on hover.
@@ -112,7 +144,7 @@ const ITEMS = [
   },
   {
     title: 'Models and fabrication',
-    text: 'Placeholder. The documentation of my models and fabrication work opens here.',
+    slug: 'models', sub: '3D models',
     color: 0xf2a98c,
     camFrom: 'print-15',
     turn: -30,   // 0015: off-axis towards the window, so the pale print shows beside the dark one (+15 hid it). 0017: 30°, so they stand apart
@@ -127,7 +159,7 @@ const ITEMS = [
   },
   {
     title: 'Architecture',
-    text: 'Placeholder. My architecture projects open here.',
+    slug: 'architecture', sub: 'Projects',
     color: 0xb8d4c8,
     camFrom: 'cabinet',
     // 0008: the posters are part of the cabinet bench object; they are lifted out of it here,
@@ -227,7 +259,8 @@ for (const item of ITEMS) {
 }
 const isoLines = ink.drawLines();
 scene.add(isoLines);
-console.info(`Room built and inked: ${Math.round(performance.now() - t0)} ms`);renderer.shadowMap.needsUpdate = true;
+console.info(`Room built and inked: ${Math.round(performance.now() - t0)} ms`);
+renderer.shadowMap.needsUpdate = true;
 applyTheme(scene, sun);   // 0014: day or night, as last chosen
 themeButton(document.getElementById('theme'), scene, sun, () => {
   renderer.shadowMap.needsUpdate = true;   // the screen's light and its shadows come and go with night
@@ -250,6 +283,7 @@ function setHover(item) {
   if (hovered) tint(hovered, null);
   if (item) tint(item, item.color);
   hovered = item;
+  lightLink(item);   // 0020
   canvas.style.cursor = item ? 'pointer' : '';
 }
 const ray = new THREE.Raycaster();
@@ -260,7 +294,8 @@ function pick(e) {
   return ray.intersectObjects(pickable, false)[0]?.object.userData.item ?? null;
 }
 
-// Camera. `shift` slides the picture aside so the panel does not cover the object.
+// Camera. 0020: the drawing is fitted into #picture, where the picture is on the old portfolio's
+// spread; the camera's view is offset so its middle is the middle of that box.
 // 0014: the camera looks along `dir` (the isometric VIEW_DIR at home). It is orthographic:
 // parallel lines, no perspective, so it has no focal length; `zoom` sets the scale. `near`
 // cuts away what stands between the camera (40 m out) and the object it flies to.
@@ -268,28 +303,47 @@ const look = new THREE.Vector3(), dir = VIEW_DIR.clone(), CAM = 40;
 const flight = { lookFrom: new THREE.Vector3(), lookTo: new THREE.Vector3(), dirFrom: new THREE.Vector3(), turn: new THREE.Quaternion(), t0: 0 };
 let zoom = 1, near = 0.1;
 let state = 'home';     // home | flying | open
-let shift = 0;
 let current = null;
 
-// Narrow screens zoom out to fit the same width.
-const zoomFor = (view) => view.zoom * Math.min(1, innerWidth / innerHeight / 1.3);
-const homeView = () => {
-  if (STUDY.get('view') === 'window' || STUDY.has('tune')) return windowView();
-  const v = innerWidth < 800 ? HOME_PHONE : HOME; return { target: new THREE.Vector3(...v.target), zoom: zoomFor(v), dir: VIEW_DIR, near: 0.1 };
-};
+const STUDY = new URLSearchParams(location.search);
+// The box the drawing is fitted into, in CSS pixels. The checking views (?view=window, ?tune) use the whole window.
+const study = () => STUDY.get('view') === 'window' || STUDY.has('tune');
+const rect = () => (study() ? { left: 0, top: 0, width: innerWidth, height: innerHeight } : document.getElementById('picture').getBoundingClientRect());
+// The zoom at which `across` x `up` metres of the drawing fill `share` of the box.
+const zoomToFit = (across, up, share = 1) => { const r = rect(); return share * VIEW_HEIGHT / innerHeight * Math.min(r.width / across, r.height / up); };
+// Centre and size of a box as seen along d, in the camera's own across and up.
+function seen(box, d) {
+  const c = box.getCenter(new THREE.Vector3()), across = new THREE.Vector3(0, 1, 0).cross(d).normalize(), up = d.clone().cross(across), p = new THREE.Vector3();
+  const lo = [Infinity, Infinity], hi = [-Infinity, -Infinity];
+  let front = 0;
+  for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
+    p.set(x, y, z).sub(c);
+    const u = p.dot(across), v = p.dot(up);
+    lo[0] = Math.min(lo[0], u); hi[0] = Math.max(hi[0], u); lo[1] = Math.min(lo[1], v); hi[1] = Math.max(hi[1], v);
+    front = Math.max(front, p.dot(d));
+  }
+  const centre = c.addScaledVector(across, (lo[0] + hi[0]) / 2).addScaledVector(up, (lo[1] + hi[1]) / 2);
+  return { centre, w: hi[0] - lo[0], h: hi[1] - lo[1], front };
+}
+// Home: the whole room fills the box. On a phone it crops to the desk (as since 0002):
+// HOME_PHONE's point in the middle, 2.6 m of the drawing across the box.
+function homeView() {
+  if (study()) return windowView();
+  if (innerWidth < 800) return { target: new THREE.Vector3(...HOME_PHONE.target), zoom: zoomToFit(2.6, 0), dir: VIEW_DIR, near: 0.1 };
+  const s = seen(shell.bounds(SHELL), VIEW_DIR);
+  return { target: s.centre, zoom: zoomToFit(s.w, s.h), dir: VIEW_DIR, near: 0.1 };
+}
 // 0017: the city outside is always there (objects/skyline.js, the city set in city.json).
 // ?view=window looks straight at the window, with what stands more than 150 mm in front of it
 // cut away: a view for checking the skyline, not linked from anywhere. ?tune adds sliders that
 // move the eye in the city and save it to bench/skyline.json (needs python serve.py).
-const STUDY = new URLSearchParams(location.search);
 function windowView() {
   const f = shell.frame(SHELL);
-  return { target: new THREE.Vector3(shell.X_IN, (f.yF + f.yT) / 2, (f.z0 + f.z1) / 2), zoom: zoomFor({ zoom: 1.45 }), dir: new THREE.Vector3(1, 0, 0), near: CAM - 0.15 };
+  return { target: new THREE.Vector3(shell.X_IN, (f.yF + f.yT) / 2, (f.z0 + f.z1) / 2), zoom: 1.45 * Math.min(1, innerWidth / innerHeight / 1.3), dir: new THREE.Vector3(1, 0, 0), near: CAM - 0.15 };
 }
 // 0014: the view of a clicked item, head-on. It faces the way its hot parts (screen, posters,
 // prints) face, levelled; the camera centres on them and zooms so they fill `item.close` of
-// the free part of the window (beside the panel, or above it on a phone). Everything more
-// than 120 mm in front of them is cut away.
+// the box. Everything more than 120 mm in front of them is cut away.
 const partsOf = (item) => { const hots = item.meshes.filter((m) => m.userData.hot); return hots.length ? hots : item.meshes; };
 function dirFor(item) {
   const n = new THREE.Vector3(), q = new THREE.Quaternion();
@@ -320,59 +374,90 @@ function viewFor(item) {
   const box = new THREE.Box3(), n = dirFor(item);
   for (const m of partsOf(item)) box.expandByObject(m);
   // 0017: sized in the camera's own frame (it may look down), so the parts sit in the middle.
-  const c = box.getCenter(new THREE.Vector3()), across = new THREE.Vector3(0, 1, 0).cross(n).normalize(), up = n.clone().cross(across), p = new THREE.Vector3();
-  let w = 0, h = 0, front = 0;
-  for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
-    p.set(x, y, z).sub(c);
-    w = Math.max(w, 2 * Math.abs(p.dot(across))); h = Math.max(h, 2 * Math.abs(p.dot(up))); front = Math.max(front, p.dot(n));
-  }
-  const wide = innerWidth >= 800, freeW = wide ? (innerWidth - 380) / innerWidth : 1, freeH = wide ? 1 : 0.5;
-  const zoomTo = item.close * VIEW_HEIGHT * Math.min(freeH / h, innerWidth / innerHeight * freeW / w);
-  return { target: c, zoom: zoomTo, dir: n, near: CAM - front - 0.12 };
+  const s = seen(box, n);
+  return { target: s.centre, zoom: zoomToFit(s.w, s.h, item.close), dir: n, near: CAM - s.front - 0.12 };
 }
 function aim() {
   camera.position.copy(look).addScaledVector(dir, CAM);
   camera.lookAt(look);
   camera.zoom = zoom;
   camera.near = near;
+  applyOffset();   // also brings the projection up to date with zoom and near
 }
-function fly(view, shiftTo, done) {
+function fly(view, done) {
   state = 'flying';
-  Object.assign(flight, { zoomFrom: zoom, zoomTo: view.zoom, nearFrom: near, nearTo: view.near, shiftFrom: shift, shiftTo, t0: performance.now(), done });
+  Object.assign(flight, { zoomFrom: zoom, zoomTo: view.zoom, nearFrom: near, nearTo: view.near, t0: performance.now(), done });
   flight.lookFrom.copy(look);
   flight.lookTo.copy(view.target);
   flight.dirFrom.copy(dir);
   flight.turn.setFromUnitVectors(dir, view.dir);   // the sweep round to it
 }
+
+// ---- Pages (0020) ---------------------------------------------------------------------------
+// Each item has its own address, #/apps, #/models, #/architecture; home is #/. Clicking an
+// object or a menu line changes the address; the address flies the camera there, then the
+// page's text comes in. So the browser's Back and Forward work, and a page can be linked.
+const HOME_TEXT = { title: 'Shrey Tatamiya', sub: 'Computational design and architecture' };
+const textBox = document.getElementById('text'), titleEl = document.getElementById('title'), subEl = document.getElementById('sub');
+function showText(t, item) {
+  titleEl.textContent = t.title;
+  subEl.textContent = t.sub;
+  document.title = item ? `${item.title} · Shrey Tatamiya` : 'Shrey Tatamiya';
+  links.forEach((a, i) => (ITEMS[i] === item ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
+  textBox.classList.remove('leaving');
+}
 function open(item) {
+  if (!item.meshes.length) return;   // it failed to build
+  textBox.classList.add('leaving');
+  if (current && current !== item && !(THEME.dark && glows(current))) tint(current, null);
+  if (current && current !== item && THEME.dark && glows(current)) glowing(current.root, false);
   current = item;
+  hovered = null;
   setHover(item);
-  document.getElementById('panel-title').textContent = item.title;
-  document.getElementById('panel-text').textContent = item.text;
+  showLines(isoLines);
   current.flown = viewFor(item);
   const lines = linesFor(current.flown.dir);
-  fly(current.flown, 1, () => {
+  fly(current.flown, () => {
     showLines(lines);   // 0014: the straight-on lines, now that it faces it
     // 0015: the hover colour was the cue to click; once there, the object is drawn as it is, so
     // its lines show (at night the light lines vanished on the dark print's orange). The
     // screens' night light stays on.
     if (!(THEME.dark && glows(item))) tint(item, null);
     state = 'open';
-    document.getElementById('panel').classList.add('open');
-    document.getElementById('back').focus({ preventScroll: true });
+    showText({ title: item.title, sub: item.sub }, item);
+    route();   // the address may have changed during the flight
   });
 }
 function back() {
-  if (state !== 'open') return;
-  document.getElementById('panel').classList.remove('open');
+  textBox.classList.add('leaving');
   showLines(isoLines);
-  fly(homeView(), 0, () => { state = 'home'; current = null; setHover(null); });
+  fly(homeView(), () => { state = 'home'; const was = current; current = null; hovered = was; setHover(null); showText(HOME_TEXT, null); route(); });
 }
+// Makes the page match the address. During a flight it waits; the flight's end calls it again.
+function route() {
+  if (state === 'flying') return;
+  const item = ITEMS.find((i) => location.hash === `#/${i.slug}`) ?? null;
+  if (item && item !== current) open(item);
+  else if (!item && current) back();
+}
+const go = (item) => { location.hash = item ? `/${item.slug}` : '/'; };
 
-function applyShift() {
-  const w = innerWidth, h = innerHeight;
-  const wide = w >= 800;
-  camera.setViewOffset(w, h, wide ? shift * 190 : 0, wide ? 0 : shift * h / 4, w, h);
+// The menu: one link per item. Hovering (or tabbing to) a line lights its object; hovering an
+// object underlines its line (lightLink, from setHover).
+const links = ITEMS.map((item) => {
+  const a = Object.assign(document.createElement('a'), { href: `#/${item.slug}`, textContent: item.title });
+  const on = () => { if (state === 'home') setHover(item); }, off = () => { if (state === 'home') setHover(null); };
+  a.addEventListener('mouseenter', on); a.addEventListener('focus', on);
+  a.addEventListener('mouseleave', off); a.addEventListener('blur', off);
+  document.getElementById('menu').append(a);
+  return a;
+});
+function lightLink(item) { links.forEach((a, i) => a.classList.toggle('lit', ITEMS[i] === item)); }
+
+function applyOffset() {
+  // The drawing's middle goes to the middle of the box.
+  const r = rect();
+  camera.setViewOffset(innerWidth, innerHeight, innerWidth / 2 - (r.left + r.width / 2), innerHeight / 2 - (r.top + r.height / 2), innerWidth, innerHeight);
 }
 function resize() {
   redraw();
@@ -387,7 +472,7 @@ function resize() {
     near = view.near;
     aim();
   }
-  applyShift();
+  applyOffset();
 }
 
 renderer.setAnimationLoop((now) => {
@@ -401,15 +486,23 @@ renderer.setAnimationLoop((now) => {
     dir.copy(flight.dirFrom).applyQuaternion(new THREE.Quaternion().slerp(flight.turn, k));
     near = flight.nearFrom + (flight.nearTo - flight.nearFrom) * k ** 3;   // the cut comes in late, as it arrives
     aim();
-    shift = flight.shiftFrom + (flight.shiftTo - flight.shiftFrom) * k;
-    applyShift();
     if (t === 1) flight.done();
   }
+  // 0020: drawn inside the picture box only, as the picture on the spread. At home the room
+  // fits inside it; flying to an object, it zooms within the box.
+  renderer.setScissorTest(false);
+  renderer.setClearColor(scene.background);
+  renderer.clear();
+  const r = rect();
+  renderer.setScissor(r.left, innerHeight - r.top - r.height, r.width, r.height);   // from the bottom left, in CSS pixels
+  renderer.setScissorTest(true);
   renderer.render(scene, camera);
 });
 
 // Input. Touch: first tap highlights, second tap opens. Mouse: hover, then click.
 let touch = false;
+canvas.setAttribute('role', 'img');
+canvas.setAttribute('aria-label', 'Desk');
 canvas.addEventListener('pointerdown', (e) => { touch = e.pointerType !== 'mouse'; });
 canvas.addEventListener('pointermove', (e) => { if (state === 'home' && e.pointerType === 'mouse') setHover(pick(e)); });
 canvas.addEventListener('pointerleave', (e) => { if (state === 'home' && e.pointerType === 'mouse') setHover(null); });
@@ -417,11 +510,10 @@ canvas.addEventListener('click', (e) => {
   if (state !== 'home') return;
   const item = pick(e);
   if (touch && item !== hovered) setHover(item);
-  else if (item) open(item);
+  else if (item) go(item);
 });
-document.getElementById('back').addEventListener('click', back);
-addEventListener('keydown', (e) => { if (e.key === 'Escape') back(); });
-addEventListener('resize', resize);
+addEventListener('keydown', (e) => { if (e.key === 'Escape' && current) go(null); });
+addEventListener('hashchange', route);addEventListener('resize', resize);
 try {
   const sky = await import('./objects/skyline.js');
   const skyline = await sky.addSkyline({ scene, renderer, shell: SHELL });
@@ -458,8 +550,9 @@ function tunePanel(skyline, ranges) {
   });
   box.append(save, status);
 }
-if (STUDY.get('view') === 'window' || STUDY.has('tune')) showLines(linesFor(windowView().dir));
+if (study()) showLines(linesFor(windowView().dir));
 resize();
+route();   // 0020: an address like #/models opens its page straight away
 // 0014: work out the straight-on lines in the background, one item at a time, so a click
 // does not wait for them.
 const idle = window.requestIdleCallback ?? ((f) => setTimeout(f, 300));
