@@ -16,6 +16,7 @@
 import * as THREE from 'three';
 import { as, group, box, cylinder, lines, poly, random, tier, makeInk, applyTheme, THEME } from '../lib/draw.js';
 import { frame } from './room-shell.js';
+import { PUBLIC } from '../lib/models.js';
 
 export const STREET = -6.6;   // the quay, below the room's floor
 const LIT = 0xe4e4e4;   // a lit window at night: light grey, not yellow (greyscale)
@@ -137,13 +138,13 @@ function windowPlane(f, W, H, yc, zc, map) {
 }
 
 // Adds the city, as a picture in the window opening, to the room's scene.
-// 0019: on the public site (city.json has "pictures": true, written by publish.py) the window
+// 0019: on the public site (PUBLIC, set by publish.py) the window
 // shows the two pictures saved from ?tune, day and night, in place of the city itself: the same
 // pixels, without the 7 MB of buildings. Returns { ready } that settles once the window is drawn.
 export async function addSkyline({ scene, renderer, shell }) {
-  const { city: name, pictures: baked } = await (await fetch('city.json')).json();
+  const { city: name } = await (await fetch('city.json')).json();
   const f = frame(shell), zc = (f.z0 + f.z1) / 2, yc = (f.yF + f.yT) / 2, W = f.z1 - f.z0, H = f.yT - f.yF;
-  if (baked) {
+  if (PUBLIC) {
     const meta = await (await fetch(`city/${name}.json`)).json();
     const load = (mode) => new THREE.TextureLoader().loadAsync(`city/${name}-${mode}.png`).then((t) => {
       // As the live picture was: sRGB, no mipmaps, so it reads as sharp at a small size.
