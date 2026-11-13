@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Desk</title>
+<style>
+  :root { --paper: #f5f5f4; --ink: #111; }
+  /* 0014: night, light lines on dark grey. The colours match NIGHT in lib/draw.js. */
+  :root[data-theme=dark] { --paper: #171717; --ink: #ebebeb; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--paper); color: var(--ink); }
+  body { font: 16px/1.5 system-ui, sans-serif; }
+  canvas { display: block; touch-action: manipulation; }
+
+  #panel {
+    position: fixed; top: 0; right: 0; bottom: 0; width: 380px; box-sizing: border-box;
+    padding: 32px; overflow: auto; background: var(--paper); border-left: 1px solid var(--ink);
+    transform: translateX(100%); visibility: hidden; transition: transform .35s, visibility .35s;
+  }
+  #panel.open { transform: none; visibility: visible; }
+  #panel h1 { font-size: 24px; font-weight: 500; margin: 24px 0 8px; }
+  #back { font: inherit; color: inherit; background: none; border: 1px solid var(--ink); padding: 6px 12px; cursor: pointer; }
+  #back:hover { background: var(--ink); color: var(--paper); }
+
+  #theme { position: fixed; top: 16px; left: 16px; font: inherit; font-size: 14px; color: var(--ink); background: var(--paper);
+    border: 1px solid var(--ink); padding: 4px 10px; cursor: pointer; }
+  #theme:hover { background: var(--ink); color: var(--paper); }
+  /* 0017: swisstopo asks to be credited where its data is shown */
+  #credit { position: fixed; bottom: 8px; left: 16px; font-size: 11px; opacity: .6; }
+  #credit a { color: inherit; }
+  #tune { position: fixed; top: 56px; left: 16px; display: grid; gap: 6px; padding: 12px; font-size: 13px;
+    background: var(--paper); border: 1px solid var(--ink); }
+  #tune[hidden] { display: none; }   /* 0019: its own display rule beat [hidden], so it always showed */
+  #tune label { display: grid; grid-template-columns: 160px auto; gap: 8px; align-items: center; }
+  #tune button { font: inherit; color: inherit; background: none; border: 1px solid var(--ink); padding: 4px 10px; cursor: pointer; justify-self: start; }
+
+  @media (max-width: 799px) {
+    #panel {
+      top: 50%; left: 0; right: 0; width: auto; padding: 20px 16px;
+      border-left: 0; border-top: 1px solid var(--ink); transform: translateY(100%);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) { #panel { transition: none; } }
+</style>
+<script type="importmap">
+  { "imports": {
+    "three": "./lib/three/three.module.min.js",
+    "three/addons/": "./lib/three/addons/"
+  } }
+</script>
+</head>
+<body>
+<button id="theme" type="button" title="Switch between day and night">Night</button>
+<small id="credit" hidden></small>
+<form id="tune" hidden onsubmit="return false"><b>Window view</b></form>
+<aside id="panel" aria-live="polite">
+  <button id="back">&larr; Back to desk</button>
+  <h1 id="panel-title"></h1>
+  <p id="panel-text"></p>
+</aside>
+
+<script type="module">
+// The desk scene. The drawing style is in lib/draw.js. Every object (the room shell, the desk
+// and everything on it, the furniture and the plants) is made by objects/index.js from what
+// the model bench saved (bench.html), so it looks the same here and on the bench. Needs a
+// local server: python serve.py
+import * as THREE from 'three';
+import { PAPER, VIEW_DIR, group, makeInk, makeLights, fitSun, applyTheme, themeButton, THEME, glowing } from './lib/draw.js';
+THEME.hoverGlow = true;   // 0014: at night the screens light up while hovered
+import { saved, make } from './objects/index.js';
+import * as shell from './objects/room-shell.js';
+
+const FLY_MS = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 1400;
+const VIEW_HEIGHT = 3.95;   // metres of the scene that fit the window height at zoom 1
+// 0006: the room is 2.8 m along the window wall, with a corner at each end.
+// 0007: lower and a little further out, for the 2.8 m walls and the 375 mm slab below.
+const HOME = { target: [0.55, 1.12, 0.98], zoom: 0.78 };
+const HOME_PHONE = { target: [0.42, 1.08, -0.1], zoom: 2 };   // narrow screens crop to the desk
+
+// The room shell's settings, as saved on the bench (or its defaults), and what follows from them.
+const SHELL = (await saved('room-shell')).settings;
+
+// 0008: the furniture and plants (chairs, cabinet, rug, the four plants) are bench objects,
+// built in objects/furniture.js and made here through make(), like the room shell.
+
+// The cabinet is made once: the scenery draws it, the Architecture item takes its posters.
+// The posters keep where they stand and the cabinet's look when they are lifted out.
+const cabinetMade = saved('cabinet').then(async (c) => {
+  const made = await make('cabinet', c.settings);
+  made.root.updateMatrixWorld(true);
+  made.posters = new THREE.Group().attach(made.root.getObjectByName('posters'));
+  made.posters.userData.style = made.root.userData.style;
+  return made;
+});
+
+// The things you can click. To swap in a real model, change only its `build`.
+// A build returns any Object3D, or a promise of one. Model units must be metres.
+// Meshes marked hot() are what tints on hover. With none marked, the whole object tints.
+const ITEMS = [
+  {
+    title: 'Websites and apps',
+    text: 'Placeholder. The websites and apps I have made open here.',
+    color: 0xffe9a8,
+    camFrom: 'monitor',   // 0014: the bench object whose 'close' setting says how close the camera comes
+    // 0011: the monitor is a bench object (objects/desk-things.js); its screen tints on hover.
+    // 0014: with the laptop, so both screens light up together at night.
+    build: async () => group(
+      (await make('monitor', (await saved('monitor')).settings)).root,
+      (await make('laptop', (await saved('laptop')).settings)).root,
+    ),
+  },
+  {
+    title: 'Models and fabrication',
+    text: 'Placeholder. The documentation of my models and fabrication work opens here.',
+    color: 0xf2a98c,
+    camFrom: 'print-15',
+    turn: -30,   // 0015: off-axis towards the window, so the pale print shows beside the dark one (+15 hid it). 0017: 30°, so they stand apart
+    tilt: 20,    // 0017: from a little above, looking down at them, so more of each shows
+    // 0007: the two prints are your STL files, bench objects at their real size. The pale wide
+    // one stands under the screen, right of the foot; the dark one in the right corner.
+    build: async () => group(
+      (await make('print-wide', (await saved('print-wide')).settings)).root,
+      (await make('print-15', (await saved('print-15')).settings)).root,
+      // 0014: the bowl with the bulb is gone (your bench note); the two prints are the click.
+    ),
+  },
+  {
+    title: 'Architecture',
+    text: 'Placeholder. My architecture projects open here.',
+    color: 0xb8d4c8,
+    camFrom: 'cabinet',
+    // 0008: the posters are part of the cabinet bench object; they are lifted out of it here,
+    // where they stand, so they alone are the click.
+    build: async () => (await cabinetMade).posters,
+  },
+];
+
+// Fixed scenery: it draws and hides what is behind it, but does not react.
+// Each entry builds alone, so one that fails loses only itself.
+const SCENERY = [
+  // The room shell, the desk and the speaker are bench objects: see objects/index.js.
+  async function roomShell() { return (await make('room-shell', SHELL)).root; },
+  async function desk() { return (await make('desk', (await saved('desk')).settings)).root; },
+  async function speaker() { return (await make('speaker', (await saved('speaker')).settings)).root; },
+  // 0008: the furniture and plants, as saved on the bench.
+  // 0011: the desk things and the things on the sill, as saved on the bench.
+  ...['rug', 'desk-chair', 'armchair', 'dracaena', 'desk-plant', 'sill-plant', 'pothos',
+    'desk-mat', 'keyboard', 'mouse', 'laptop-stand', 'remote', 'earbuds', 'book', 'power-bank', 'sill-things'].map((id) =>
+    Object.defineProperty(async () => (await make(id, (await saved(id)).settings)).root, 'name', { value: id })),
+  async function cabinet() { return (await cabinetMade).root; },   // its posters are the Architecture item
+  async function glow() {
+    // The light strip's glow, painted on the wall. Lines draw over it, so the ink stays ink.
+    // 0015: at night it is as bright as the strip's light (the monitor's 'strip' setting).
+    const strip = (await saved('monitor')).settings.strip;
+    const c = document.createElement('canvas');
+    c.width = c.height = 1024;
+    const g = c.getContext('2d');
+    const spot = (x, y, r, rgb, a) => {
+      const grad = g.createRadialGradient(x, y, 0, x, y, r);
+      grad.addColorStop(0, `rgba(${rgb},${a})`);
+      grad.addColorStop(1, `rgba(${rgb},0)`);
+      g.fillStyle = grad;
+      g.fillRect(0, 0, 1024, 1024);
+    };
+    // Softer than 0004: lower peaks, wider falloff, so it reads as a haze on the wall.
+    spot(270, 640, 620, '255,205,120', 0.28);   // behind the monitor as seen from here
+    spot(290, 740, 360, '255,228,150', 0.16);   // the bright band under it
+    spot(60, 660, 360, '245,140,60', 0.24);     // orange end on the left, as in the photos
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const plane = new THREE.Mesh(new THREE.PlaneGeometry(1.98, 2.45),
+      new THREE.MeshBasicMaterial({ map: tex, toneMapped: false, transparent: true, depthWrite: false }));
+    plane.position.set(0.47, 2.45 / 2, -0.4992);
+    plane.userData.plain = true;
+    // 0014: at night the glow adds light to the dark wall instead of laying a haze over it.
+    plane.userData.onTheme = (dark) => {
+      plane.material.blending = dark ? THREE.AdditiveBlending : THREE.NormalBlending;
+      plane.material.color.setScalar(dark ? strip : 1);
+      plane.material.needsUpdate = true;
+    };
+    return plane;
+  },
+];
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(PAPER);
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 80);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFShadowMap;   // crisp edges, as in the references
+renderer.shadowMap.autoUpdate = false;   // nothing moves, so the shadows are drawn once
+const sun = makeLights(scene);
+fitSun(sun, shell.bounds(SHELL));
+scene.add(shell.sunBlockers(SHELL));
+document.body.prepend(renderer.domElement);
+const canvas = renderer.domElement;
+// 0019: drawn only when something changed (a flight, a hover, day or night, a resize), not 60
+// times a second for a still picture.
+let dirty = true;
+const redraw = () => { dirty = true; };
+
+// One broken object is logged and left out. The rest of the page carries on.
+const ink = makeInk();
+const pickable = [], roots = [];   // roots: everything drawn, for the straight-on lines (0014)
+const t0 = performance.now();
+for (const build of SCENERY) {
+  try {
+    const object = await build();
+    const meshes = ink.lineify(object);
+    scene.add(object);
+    roots.push(object);
+    pickable.push(...meshes.filter((m) => !m.userData.seeThrough));   // 0009: the money plant lets clicks through to the posters
+  } catch (error) { console.error(`Scenery "${build.name}" failed:`, error); }
+}
+for (const item of ITEMS) {
+  item.meshes = [];
+  try {
+    const object = item.root = await item.build();
+    item.close = (await saved(item.camFrom)).settings.close ?? 0.6;
+    item.meshes = ink.lineify(object, item);
+    scene.add(object);
+    roots.push(object);
+    pickable.push(...item.meshes);
+  } catch (error) { console.error(`"${item.title}" failed:`, error); }
+}
+const isoLines = ink.drawLines();
+scene.add(isoLines);
+console.info(`Room built and inked: ${Math.round(performance.now() - t0)} ms`);renderer.shadowMap.needsUpdate = true;
+applyTheme(scene, sun);   // 0014: day or night, as last chosen
+themeButton(document.getElementById('theme'), scene, sun, () => {
+  renderer.shadowMap.needsUpdate = true;   // the screen's light and its shadows come and go with night
+  if (hovered) tint(hovered, hovered.color);
+  redraw();
+});
+
+// Hover
+let hovered = null;
+const glows = (item) => { let lit = false; item.root?.traverse((o) => { lit ||= !!o.userData.onHover; }); return lit; };
+function tint(item, color) {
+  redraw();
+  // 0014: at night the screens light up instead of taking a colour.
+  if (THEME.dark && glows(item)) return glowing(item.root, color !== null);
+  const hots = item.meshes.filter((m) => m.userData.hot);
+  (hots.length ? hots : item.meshes).forEach((m) => m.material.color.set(color ?? m.userData.tone));
+}
+function setHover(item) {
+  if (item === hovered) return;
+  if (hovered) tint(hovered, null);
+  if (item) tint(item, item.color);
+  hovered = item;
+  canvas.style.cursor = item ? 'pointer' : '';
+}
+const ray = new THREE.Raycaster();
+function pick(e) {
+  const ndc = new THREE.Vector2(e.clientX / innerWidth * 2 - 1, 1 - e.clientY / innerHeight * 2);
+  ray.setFromCamera(ndc, camera);
+  // First hit only, so an object behind another one does not react.
+  return ray.intersectObjects(pickable, false)[0]?.object.userData.item ?? null;
+}
+
+// Camera. `shift` slides the picture aside so the panel does not cover the object.
+// 0014: the camera looks along `dir` (the isometric VIEW_DIR at home). It is orthographic:
+// parallel lines, no perspective, so it has no focal length; `zoom` sets the scale. `near`
+// cuts away what stands between the camera (40 m out) and the object it flies to.
+const look = new THREE.Vector3(), dir = VIEW_DIR.clone(), CAM = 40;
+const flight = { lookFrom: new THREE.Vector3(), lookTo: new THREE.Vector3(), dirFrom: new THREE.Vector3(), turn: new THREE.Quaternion(), t0: 0 };
+let zoom = 1, near = 0.1;
+let state = 'home';     // home | flying | open
+let shift = 0;
+let current = null;
+
+// Narrow screens zoom out to fit the same width.
+const zoomFor = (view) => view.zoom * Math.min(1, innerWidth / innerHeight / 1.3);
+const homeView = () => {
+  if (STUDY.get('view') === 'window' || STUDY.has('tune')) return windowView();
+  const v = innerWidth < 800 ? HOME_PHONE : HOME; return { target: new THREE.Vector3(...v.target), zoom: zoomFor(v), dir: VIEW_DIR, near: 0.1 };
+};
+// 0017: the city outside is always there (objects/skyline.js, the city set in city.json).
+// ?view=window looks straight at the window, with what stands more than 150 mm in front of it
+// cut away: a view for checking the skyline, not linked from anywhere. ?tune adds sliders that
+// move the eye in the city and save it to bench/skyline.json (needs python serve.py).
+const STUDY = new URLSearchParams(location.search);
+function windowView() {
+  const f = shell.frame(SHELL);
+  return { target: new THREE.Vector3(shell.X_IN, (f.yF + f.yT) / 2, (f.z0 + f.z1) / 2), zoom: zoomFor({ zoom: 1.45 }), dir: new THREE.Vector3(1, 0, 0), near: CAM - 0.15 };
+}
+// 0014: the view of a clicked item, head-on. It faces the way its hot parts (screen, posters,
+// prints) face, levelled; the camera centres on them and zooms so they fill `item.close` of
+// the free part of the window (beside the panel, or above it on a phone). Everything more
+// than 120 mm in front of them is cut away.
+const partsOf = (item) => { const hots = item.meshes.filter((m) => m.userData.hot); return hots.length ? hots : item.meshes; };
+function dirFor(item) {
+  const n = new THREE.Vector3(), q = new THREE.Quaternion();
+  for (const m of partsOf(item)) n.add(new THREE.Vector3(0, 0, 1).applyQuaternion(m.getWorldQuaternion(q)));
+  n.y = 0;
+  if (n.lengthSq() < 1e-6) n.set(0, 0, 1);
+  n.normalize().applyAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(item.turn ?? 0));
+  const tilt = THREE.MathUtils.degToRad(item.tilt ?? 0);   // 0017: the camera raised, looking down by `tilt`
+  return n.multiplyScalar(Math.cos(tilt)).setY(Math.sin(tilt));
+}
+// The lines of the whole scene as seen from `d`: outlines depend on where they are seen from,
+// so a straight-on view needs its own. Worked out once per direction and kept (hidden).
+const lineSets = new Map();
+function linesFor(d) {
+  const key = d.toArray().map((v) => v.toFixed(3)).join();
+  if (!lineSets.has(key)) {
+    const ink2 = makeInk(d);
+    for (const r of roots) ink2.lineify(r, null, false, true);
+    const g = ink2.drawLines();
+    g.visible = false;
+    scene.add(g);
+    lineSets.set(key, g);
+  }
+  return lineSets.get(key);
+}
+const showLines = (g) => { isoLines.visible = g === isoLines; for (const s of lineSets.values()) s.visible = s === g; redraw(); };
+function viewFor(item) {
+  const box = new THREE.Box3(), n = dirFor(item);
+  for (const m of partsOf(item)) box.expandByObject(m);
+  // 0017: sized in the camera's own frame (it may look down), so the parts sit in the middle.
+  const c = box.getCenter(new THREE.Vector3()), across = new THREE.Vector3(0, 1, 0).cross(n).normalize(), up = n.clone().cross(across), p = new THREE.Vector3();
+  let w = 0, h = 0, front = 0;
+  for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
+    p.set(x, y, z).sub(c);
+    w = Math.max(w, 2 * Math.abs(p.dot(across))); h = Math.max(h, 2 * Math.abs(p.dot(up))); front = Math.max(front, p.dot(n));
+  }
+  const wide = innerWidth >= 800, freeW = wide ? (innerWidth - 380) / innerWidth : 1, freeH = wide ? 1 : 0.5;
+  const zoomTo = item.close * VIEW_HEIGHT * Math.min(freeH / h, innerWidth / innerHeight * freeW / w);
+  return { target: c, zoom: zoomTo, dir: n, near: CAM - front - 0.12 };
+}
+function aim() {
+  camera.position.copy(look).addScaledVector(dir, CAM);
+  camera.lookAt(look);
+  camera.zoom = zoom;
+  camera.near = near;
+}
+function fly(view, shiftTo, done) {
+  state = 'flying';
+  Object.assign(flight, { zoomFrom: zoom, zoomTo: view.zoom, nearFrom: near, nearTo: view.near, shiftFrom: shift, shiftTo, t0: performance.now(), done });
+  flight.lookFrom.copy(look);
+  flight.lookTo.copy(view.target);
+  flight.dirFrom.copy(dir);
+  flight.turn.setFromUnitVectors(dir, view.dir);   // the sweep round to it
+}
+function open(item) {
+  current = item;
+  setHover(item);
+  document.getElementById('panel-title').textContent = item.title;
+  document.getElementById('panel-text').textContent = item.text;
+  current.flown = viewFor(item);
+  const lines = linesFor(current.flown.dir);
+  fly(current.flown, 1, () => {
+    showLines(lines);   // 0014: the straight-on lines, now that it faces it
+    // 0015: the hover colour was the cue to click; once there, the object is drawn as it is, so
+    // its lines show (at night the light lines vanished on the dark print's orange). The
+    // screens' night light stays on.
+    if (!(THEME.dark && glows(item))) tint(item, null);
+    state = 'open';
+    document.getElementById('panel').classList.add('open');
+    document.getElementById('back').focus({ preventScroll: true });
+  });
+}
+function back() {
+  if (state !== 'open') return;
+  document.getElementById('panel').classList.remove('open');
+  showLines(isoLines);
+  fly(homeView(), 0, () => { state = 'home'; current = null; setHover(null); });
+}
+
+function applyShift() {
+  const w = innerWidth, h = innerHeight;
+  const wide = w >= 800;
+  camera.setViewOffset(w, h, wide ? shift * 190 : 0, wide ? 0 : shift * h / 4, w, h);
+}
+function resize() {
+  redraw();
+  renderer.setSize(innerWidth, innerHeight);
+  const halfH = VIEW_HEIGHT / 2, halfW = halfH * innerWidth / innerHeight;
+  Object.assign(camera, { left: -halfW, right: halfW, top: halfH, bottom: -halfH });
+  if (state !== 'flying') {
+    const view = current ? (current.flown = viewFor(current)) : homeView();
+    look.copy(view.target);
+    dir.copy(view.dir);
+    zoom = view.zoom;
+    near = view.near;
+    aim();
+  }
+  applyShift();
+}
+
+renderer.setAnimationLoop((now) => {
+  if (state !== 'flying' && !dirty) return;
+  dirty = false;
+  if (state === 'flying') {
+    const t = FLY_MS ? Math.min((now - flight.t0) / FLY_MS, 1) : 1;
+    const k = t * t * (3 - 2 * t);
+    look.lerpVectors(flight.lookFrom, flight.lookTo, k);
+    zoom = flight.zoomFrom * (flight.zoomTo / flight.zoomFrom) ** k;   // geometric, so the zoom feels even
+    dir.copy(flight.dirFrom).applyQuaternion(new THREE.Quaternion().slerp(flight.turn, k));
+    near = flight.nearFrom + (flight.nearTo - flight.nearFrom) * k ** 3;   // the cut comes in late, as it arrives
+    aim();
+    shift = flight.shiftFrom + (flight.shiftTo - flight.shiftFrom) * k;
+    applyShift();
+    if (t === 1) flight.done();
+  }
+  renderer.render(scene, camera);
+});
+
+// Input. Touch: first tap highlights, second tap opens. Mouse: hover, then click.
+let touch = false;
+canvas.addEventListener('pointerdown', (e) => { touch = e.pointerType !== 'mouse'; });
+canvas.addEventListener('pointermove', (e) => { if (state === 'home' && e.pointerType === 'mouse') setHover(pick(e)); });
+canvas.addEventListener('pointerleave', (e) => { if (state === 'home' && e.pointerType === 'mouse') setHover(null); });
+canvas.addEventListener('click', (e) => {
+  if (state !== 'home') return;
+  const item = pick(e);
+  if (touch && item !== hovered) setHover(item);
+  else if (item) open(item);
+});
+document.getElementById('back').addEventListener('click', back);
+addEventListener('keydown', (e) => { if (e.key === 'Escape') back(); });
+addEventListener('resize', resize);
+try {
+  const sky = await import('./objects/skyline.js');
+  const skyline = await sky.addSkyline({ scene, renderer, shell: SHELL });
+  const el = document.getElementById('credit');
+  el.innerHTML = `City: <a href="https://www.swisstopo.admin.ch" rel="noopener">${skyline.credit}</a>`;
+  el.hidden = false;
+  if (STUDY.has('tune')) tunePanel(skyline, sky.VIEW_RANGES);
+  skyline.ready.then(redraw);
+} catch (error) { console.error('Skyline failed:', error); }
+// ?tune: one slider per setting of the eye in the city, redrawn live; Save writes bench/skyline.json.
+function tunePanel(skyline, ranges) {
+  const box = document.getElementById('tune');
+  box.hidden = false;
+  for (const [key, [min, max, step, label]] of Object.entries(ranges)) {
+    const row = document.createElement('label'), input = document.createElement('input'), out = document.createElement('output');
+    Object.assign(input, { type: 'range', min, max, step, value: skyline.view[key] });
+    const show = () => { out.textContent = `${(+input.value).toFixed(step < 1 ? 2 : 0)} ${label}`; };
+    input.addEventListener('input', () => { show(); skyline.set({ [key]: +input.value }); redraw(); });
+    show();
+    row.append(input, out);
+    box.append(row);
+  }
+  const save = document.createElement('button'), status = document.createElement('span');
+  save.textContent = 'Save view';
+  save.addEventListener('click', async () => {
+    const body = JSON.stringify({ object: 'skyline', title: 'The eye in the city (window view)', saved: new Date().toISOString().slice(0, 10), settings: skyline.view }, null, 2);
+    const put = (path, data, type) => fetch(path, { method: 'PUT', body: data, headers: { 'Content-Type': type } }).then((r) => r.ok).catch(() => false);
+    // 0019: and the window's picture by day and at night, which the public site shows in place
+    // of the 7 MB city (publish.py checks they are newer than the view and the city).
+    const [day, night] = await skyline.pictures();
+    const ok = await put('bench/skyline.json', body, 'application/json') && await put(`city/${skyline.name}-day.png`, day, 'image/png') && await put(`city/${skyline.name}-night.png`, night, 'image/png');
+    status.textContent = ok ? ' Saved, with the window pictures.' : ' Not saved: run python serve.py.';
+    redraw();
+  });
+  box.append(save, status);
+}
+if (STUDY.get('view') === 'window' || STUDY.has('tune')) showLines(linesFor(windowView().dir));
+resize();
+// 0014: work out the straight-on lines in the background, one item at a time, so a click
+// does not wait for them.
+const idle = window.requestIdleCallback ?? ((f) => setTimeout(f, 300));
+ITEMS.forEach((item, i) => setTimeout(() => idle(() => {
+  const t0 = performance.now();
+  linesFor(dirFor(item));
+  console.info(`Straight-on lines for "${item.title}": ${Math.round(performance.now() - t0)} ms`);
+}), 1500 + i * 400));
+</script>
+</body>
+</html>
